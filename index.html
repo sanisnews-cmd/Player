@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>KINOEBI.IN Player</title>
+<style>
+  :root{--accent:#ff3d3d;--accent2:#ff8a3d}
+  *{box-sizing:border-box;margin:0}
+  html,body{width:100%;height:100%;overflow:hidden}
+  body{background:#000;font-family:system-ui,-apple-system,sans-serif}
+  .player{position:relative;width:100%;height:100%;background:#000;color:#fff;overflow:hidden;outline:0}
+  .player:fullscreen,.player:-webkit-full-screen,.player.pseudo{max-width:none;border-radius:0}
+  .player.pseudo{position:fixed;inset:0;width:100vw;height:100vh;z-index:9999}
+  video{width:100%;height:100%;display:block;background:#000;object-fit:contain}
+
+  /* ცენტრალური ღილაკი */
+  .big{position:absolute;left:50%;top:50%;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;cursor:pointer;border:0;color:#fff;box-shadow:0 8px 30px rgba(255,61,61,.5);transition:transform .25s,opacity .25s;animation:pulse 2s infinite}
+  .big svg{width:38px;height:38px;margin-left:5px}
+  .big:hover{transform:scale(1.1);background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  .player.playing .big{opacity:0;transform:scale(1.6);pointer-events:none;animation:none}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,61,61,.55)}70%{box-shadow:0 0 0 22px rgba(255,61,61,0)}100%{box-shadow:0 0 0 0 rgba(255,61,61,0)}}
+
+  .err{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;padding:0 24px;font-size:14px;line-height:1.6;color:#ffb4b4;display:none;z-index:2}
+  .err a{color:#fff;text-decoration:underline}
+  .player.failed .err{display:block}
+  .player.failed .big{display:none}
+  .spin{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border:3px solid rgba(255,255,255,.2);border-top-color:var(--accent);border-radius:50%;animation:rot .8s linear infinite;opacity:0;pointer-events:none;transition:opacity .2s}
+  .player.loading .spin{opacity:1}
+  @keyframes rot{to{transform:rotate(360deg)}}
+
+  .controls{position:absolute;left:0;right:0;bottom:0;padding:40px 16px 12px;background:linear-gradient(transparent,rgba(0,0,0,.88));transition:opacity .35s,transform .35s}
+  .player.idle.playing .controls{opacity:0;transform:translateY(10px);pointer-events:none}
+  .player.idle.playing{cursor:none}
+
+  /* პროგრესი */
+  .bar{position:relative;height:18px;display:flex;align-items:center;cursor:pointer;touch-action:none}
+  .track{position:relative;width:100%;height:4px;background:rgba(255,255,255,.2);border-radius:4px;transition:height .15s}
+  .bar:hover .track,.bar.drag .track{height:7px}
+  .buf,.fill{position:absolute;inset:0 auto 0 0;border-radius:4px;width:0}
+  .buf{background:rgba(255,255,255,.3)}
+  .fill{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+  .fill::after{content:"";position:absolute;right:-7px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;background:#fff;box-shadow:0 0 10px var(--accent);transform:scale(0);transition:transform .15s}
+  .bar:hover .fill::after,.bar.drag .fill::after{transform:scale(1)}
+  .tip{position:absolute;bottom:22px;transform:translateX(-50%);background:#000;border:1px solid rgba(255,255,255,.25);font-size:12px;padding:3px 7px;border-radius:6px;opacity:0;pointer-events:none;transition:opacity .15s;font-variant-numeric:tabular-nums}
+  .bar:hover .tip{opacity:1}
+
+  .row{display:flex;align-items:center;gap:4px;margin-top:4px}
+  .sp{flex:1}
+  button.b{background:none;border:0;color:#fff;width:40px;height:40px;border-radius:10px;display:grid;place-items:center;cursor:pointer;transition:background .2s,transform .15s,color .2s}
+  button.b:hover{background:rgba(255,255,255,.15);color:var(--accent2);transform:scale(1.1)}
+  button.b:active{transform:scale(.9)}
+  button.b:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  svg{width:22px;height:22px;fill:currentColor;display:block}
+  .time{font-size:13px;font-variant-numeric:tabular-nums;margin:0 10px;opacity:.85;white-space:nowrap}
+  .hidden{display:none!important}
+  .spinme{animation:turn .4s}
+  @keyframes turn{to{transform:rotate(360deg)}}
+  #gear.open svg{transform:rotate(90deg)}
+  #gear svg{transition:transform .35s}
+
+  /* ფანჯრების საერთო სტილი */
+  .pop{position:absolute;bottom:100%;padding-bottom:12px;opacity:0;visibility:hidden;transform:translateY(8px) scale(.96);transform-origin:bottom center;transition:opacity .2s,transform .2s,visibility .2s}
+  .pop.open{opacity:1;visibility:visible;transform:none}
+  .box{background:rgba(18,18,22,.95);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.12);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+
+  /* ხმა */
+  .vol{position:relative}
+  .vol .pop{left:50%;margin-left:-70px}
+  .vol .box{width:140px;padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:12px}
+  .vol .pct{width:30px;text-align:right;font-variant-numeric:tabular-nums}
+  input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:0;height:5px;border-radius:5px;outline:0;cursor:pointer;background:linear-gradient(90deg,var(--accent) var(--v,100%),rgba(255,255,255,.2) var(--v,100%))}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 0 8px var(--accent)}
+  input[type=range]::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:#fff}
+
+  /* პარამეტრები */
+  .set{position:relative}
+  .set .pop{right:0}
+  .set .box{width:190px;padding:8px}
+  .box h4{font-size:11px;font-weight:600;padding:6px 10px 8px;letter-spacing:.12em;color:rgba(255,255,255,.55);text-transform:uppercase}
+  .q{width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:0;color:#fff;font-size:14px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:background .15s,padding .15s}
+  .q:hover{background:rgba(255,255,255,.1);padding-left:14px}
+  .q.on{background:linear-gradient(135deg,var(--accent),var(--accent2));font-weight:600}
+  .q.on::after{content:"✓"}
+  .brand{display:block;margin-top:8px;padding:10px;text-align:center;text-decoration:none;font-weight:800;letter-spacing:.14em;font-size:13px;border-radius:8px;border-top:1px solid rgba(255,255,255,.1);background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent;transition:transform .2s,filter .2s}
+  .brand:hover{transform:scale(1.07);filter:brightness(1.3)}
+  @media (max-width:600px){
+    .controls{padding:28px 8px 6px}
+    button.b{width:34px;height:34px}
+    svg{width:20px;height:20px}
+    .row{gap:0}
+    .time{margin:0 4px;font-size:11px}
+    .big{width:64px;height:64px;margin:-32px 0 0 -32px}
+  }
+  @media (max-width:400px){
+    #back,#fwd{width:30px}
+    .time{font-size:10px}
+  }
+</style>
+</head>
+<body>
+
+<div class="player" id="player" tabindex="0">
+  <video id="v" playsinline preload="metadata"></video>
+  <div class="spin"></div>
+  <div class="err" id="err"></div>
+  <button class="big" id="big" aria-label="ჩართვა"><svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg></button>
+
+  <div class="controls">
+    <div class="bar" id="bar">
+      <div class="track"><div class="buf" id="buf"></div><div class="fill" id="fill"></div></div>
+      <div class="tip" id="tip">0:00</div>
+    </div>
+    <div class="row">
+      <button class="b" id="play" aria-label="ჩართვა / დაპაუზება">
+        <svg id="iPlay" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>
+        <svg id="iPause" class="hidden" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+      </button>
+      <button class="b" id="back" aria-label="10 წამით უკან"><svg viewBox="0 0 24 24"><path d="M12 5V1L6 6l6 5V7a6 6 0 11-6 6H4a8 8 0 108-8z"/></svg></button>
+      <button class="b" id="fwd" aria-label="10 წამით წინ"><svg viewBox="0 0 24 24"><path d="M12 5V1l6 5-6 5V7a6 6 0 106 6h2a8 8 0 11-8-8z"/></svg></button>
+
+      <div class="vol" id="vol">
+        <button class="b" id="mute" aria-label="ხმის გამორთვა">
+          <svg id="iVol" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9z"/><path d="M15.5 8.5a5 5 0 010 7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M18.500 5.500a9 9 0 010 13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          <svg id="iMute" class="hidden" viewBox="0 0 24 24"><path d="M3 9v6h4l5 4V5L7 9z"/><path d="M16 9l5 6M21 9l-5 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        </button>
+        <div class="pop" id="volPop"><div class="box"><input type="range" id="volRange" min="0" max="1" step="0.01" value="1" aria-label="ხმა"><span class="pct" id="pct">100</span></div></div>
+      </div>
+
+      <span class="time" id="time">0:00 / 0:00</span>
+      <div class="sp"></div>
+
+      <div class="set" id="set">
+        <button class="b" id="gear" aria-label="პარამეტრები"><svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg></button>
+        <div class="pop" id="qPop"><div class="box">
+          <h4>ხარისხი</h4><div id="qList"></div>
+          <a class="brand" href="https://kinoebi.in" target="_blank" rel="noopener">KINOEBI.IN</a>
+        </div></div>
+      </div>
+      <button class="b" id="full" aria-label="გადიდება"><svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4zM14 4h6v6h-2V6h-4zM4 14h2v4h4v2H4zM18 14h2v6h-6v-2h4z"/></svg></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SOURCES = [
+  { label: 'ორიგინალი', src: 'https://link.storjshare.io/raw/jv5gyqa4zso3urjqhzixgodbx4kq/testireba/film.mp4' }
+];
+const DEFAULT_QUALITY = 0; // რომელი ხარისხით დაიწყოს (ინდექსი)
+const SKIP = 10;           // წამი
+const HOVER_DELAY = 600;   // ms – რამდენ ხანში ამოვარდეს ხმის ფანჯარა
+const CLOSE_DELAY = 350;   // ms – კურსორის გასვლის შემდეგ რამდენ ხანში დაიხუროს
+
+const $ = id => document.getElementById(id);
+const player = $('player'), v = $('v');
+// დრო: საათი:წუთი:წამი (საათი ჩანს მაშინ, როცა ვიდეო 1 საათზე გრძელია)
+const fmt = s => {
+  s = Math.floor(s || 0);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  const two = n => String(n).padStart(2, '0');
+  return (v.duration >= 3600) ? h + ':' + two(m) + ':' + two(sec) : m + ':' + two(sec);
+};
+const spin = el => { el.classList.remove('spinme'); void el.offsetWidth; el.classList.add('spinme'); };
+
+/* ---- play / pause ---- */
+const toggle = () => v.paused ? v.play() : v.pause();
+$('play').onclick = toggle; $('big').onclick = toggle; v.onclick = toggle;
+v.onplay = v.onpause = () => {
+  $('iPlay').classList.toggle('hidden', !v.paused);
+  $('iPause').classList.toggle('hidden', v.paused);
+  player.classList.toggle('playing', !v.paused);
+};
+v.onerror = () => {
+  const c = v.error ? v.error.code : '?';
+  const url = v.currentSrc || v.src || '';
+  const hint = {1:'ჩატვირთვა შეწყდა', 2:'ქსელის ან ბმულის შეცდომა', 3:'ფაილი დაზიანებულია', 4:'ბმული არ მუშაობს ან ფორმატი ბრაუზერისთვის უცნობია (საჭიროა MP4 H.264 + AAC)'}[c] || 'უცნობი შეცდომა';
+  $('err').innerHTML = 'ვიდეო ვერ ჩაიტვირთა<br>' + hint + ' (კოდი ' + c + ')' +
+    (url.startsWith('http') ? '<br><a href="' + url + '" target="_blank" rel="noopener">ვიდეოს ბმულის გახსნა</a>' : '');
+  player.classList.add('failed'); player.classList.remove('loading');
+};
+v.onwaiting = () => player.classList.add('loading');
+v.oncanplay = v.onplaying = () => player.classList.remove('loading');
+
+/* ---- 10 წამი ---- */
+$('back').onclick = () => { v.currentTime = Math.max(0, v.currentTime - SKIP); spin($('back').firstElementChild); };
+$('fwd').onclick  = () => { v.currentTime = Math.min(v.duration || 0, v.currentTime + SKIP); spin($('fwd').firstElementChild); };
+
+/* ---- პროგრესი ---- */
+const bar = $('bar');
+const paint = () => {
+  $('fill').style.width = (v.duration ? v.currentTime / v.duration * 100 : 0) + '%';
+  $('time').textContent = fmt(v.currentTime) + ' / ' + fmt(v.duration);
+  if (v.buffered.length && v.duration) $('buf').style.width = v.buffered.end(v.buffered.length - 1) / v.duration * 100 + '%';
+};
+v.ontimeupdate = v.onprogress = v.onloadedmetadata = paint;
+const seekTo = e => {
+  const r = bar.getBoundingClientRect();
+  const p = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  if (v.duration) v.currentTime = p * v.duration;
+  paint();
+};
+bar.addEventListener('pointerdown', e => { bar.setPointerCapture(e.pointerId); bar.classList.add('drag'); seekTo(e); });
+bar.addEventListener('pointermove', e => {
+  const r = bar.getBoundingClientRect();
+  const p = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  $('tip').style.left = p * 100 + '%';
+  $('tip').textContent = fmt(p * (v.duration || 0));
+  if (bar.classList.contains('drag')) seekTo(e);
+});
+bar.addEventListener('pointerup', () => bar.classList.remove('drag'));
+
+/* ---- ხმა: კლიკი = mute, ჰოვერი/დიდხანს დაჭერა = სლაიდერი ---- */
+const volPop = $('volPop'), volBox = $('vol');
+let hoverT, closeT, pressT, longPress = false;
+const openVol = () => { clearTimeout(closeT); volPop.classList.add('open'); };
+const scheduleClose = () => { clearTimeout(hoverT); clearTimeout(closeT); closeT = setTimeout(() => volPop.classList.remove('open'), CLOSE_DELAY); };
+
+volBox.addEventListener('mouseenter', () => {
+  clearTimeout(closeT);
+  if (!volPop.classList.contains('open')) hoverT = setTimeout(openVol, HOVER_DELAY);
+});
+volBox.addEventListener('mouseleave', scheduleClose);   // popup არის volBox-ის შიგნით, ამიტომ მასზე გადასვლისას არ იხურება
+
+$('mute').addEventListener('touchstart', () => { longPress = false; pressT = setTimeout(() => { longPress = true; openVol(); }, 500); }, {passive:true});
+$('mute').addEventListener('touchend', () => clearTimeout(pressT));
+document.addEventListener('touchstart', e => { if (!volBox.contains(e.target)) volPop.classList.remove('open'); }, {passive:true});
+
+$('mute').onclick = () => {
+  if (longPress) { longPress = false; return; }
+  v.muted = !v.muted;
+  if (!v.muted && v.volume === 0) v.volume = .5;
+};
+$('volRange').oninput = e => { v.volume = +e.target.value; v.muted = v.volume === 0; };
+v.onvolumechange = () => {
+  const m = v.muted || v.volume === 0, val = m ? 0 : v.volume;
+  $('iVol').classList.toggle('hidden', m);
+  $('iMute').classList.toggle('hidden', !m);
+  $('volRange').value = val;
+  $('volRange').style.setProperty('--v', val * 100 + '%');
+  $('pct').textContent = Math.round(val * 100);
+};
+v.onvolumechange();
+
+/* ---- პარამეტრები / ხარისხი ---- */
+const qPop = $('qPop'), qList = $('qList');
+let current = -1;
+function setQuality(i) {
+  if (i === current) return;
+  const t = v.currentTime, wasPlaying = !v.paused, first = current === -1;
+  current = i;
+  v.src = SOURCES[i].src;
+  if (!first) {
+    v.addEventListener('loadedmetadata', () => { v.currentTime = t; if (wasPlaying) v.play(); }, { once: true });
+  }
+  [...qList.children].forEach((b, k) => b.classList.toggle('on', k === i));
+}
+SOURCES.forEach((s, i) => {
+  const b = document.createElement('button');
+  b.className = 'q'; b.textContent = s.label;
+  b.onclick = () => { setQuality(i); closeSet(); };
+  qList.appendChild(b);
+});
+const closeSet = () => { qPop.classList.remove('open'); $('gear').classList.remove('open'); };
+$('gear').onclick = e => { e.stopPropagation(); qPop.classList.toggle('open'); $('gear').classList.toggle('open'); };
+document.addEventListener('click', e => { if (!$('set').contains(e.target)) closeSet(); });
+setQuality(DEFAULT_QUALITY);
+
+/* ---- fullscreen (fallback-ებით: Safari, iPhone, iframe) ---- */
+const isFull = () => document.fullscreenElement || document.webkitFullscreenElement || player.classList.contains('pseudo');
+$('full').onclick = async () => {
+  try {
+    if (isFull()) {
+      player.classList.remove('pseudo');
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } else if (player.requestFullscreen) await player.requestFullscreen();
+    else if (player.webkitRequestFullscreen) player.webkitRequestFullscreen();
+    else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+    else player.classList.add('pseudo');
+  } catch (err) { player.classList.toggle('pseudo'); }
+};
+v.ondblclick = () => $('full').click();
+
+/* ---- კონტროლების დამალვა უმოქმედობისას ---- */
+let idleT;
+const wake = () => { player.classList.remove('idle'); clearTimeout(idleT); idleT = setTimeout(() => {
+  if (!qPop.classList.contains('open') && !volPop.classList.contains('open')) player.classList.add('idle'); }, 2500); };
+['mousemove','touchstart','keydown'].forEach(ev => player.addEventListener(ev, wake));
+
+/* ---- კლავიატურა ---- */
+player.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); toggle(); }
+  if (e.key === 'ArrowLeft')  $('back').click();
+  if (e.key === 'ArrowRight') $('fwd').click();
+  if (e.key === 'f') $('full').click();
+  if (e.key === 'm') $('mute').click();
+});
+</script>
+</body>
+</html>
